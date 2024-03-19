@@ -1,0 +1,86 @@
+= RKE2 Calico GlobalNetworkPolicy
+
+In this Post i will use RKE2 Calico GlobalNetworkPolicy to secure the host access SSH to be limited to a specific IP CIDR, I will also use the CRD object not the calicoctl
+ 
+
+.References :
+** https://docs.tigera.io/calico/3.27/reference[Calico Docs]
+** https://github.com/rancher/rke2-charts/blob/main-source/packages/rke2-calico[RKE2 Calico chart]
+
+
+:sectnums:
+
+== Configure Calico FelixConfiguration in RKE2
+
+By default the SSH is always enabled as pert of the https://docs.tigera.io/calico/latest/reference/host-endpoints/failsafe[Failsafe rules], so I will Update the https://docs.tigera.io/calico/latest/reference/felix/configuration[FelixConfiguration]
+The list of Port are extracted from the default configuration found at https://docs.tigera.io/calico/latest/reference/host-endpoints/failsafe[Failsafe rules], with only SSH being excluded
+
+[source,bash]
+----
+kubectl patch FelixConfiguration default --type=merge --patch='{"spec":{"failsafeInboundHostPorts":[{"net":"0.0.0.0","port":179,"protocol":"tcp"},{"net":"0.0.0.0","port":2379,"protocol":"tcp"},{"net":"0.0.0.0","port":2380,"protocol":"tcp"},{"net":"0.0.0.0","port":5473,"protocol":"tcp"},{"net":"0.0.0.0","port":6443,"protocol":"tcp"},{"net":"0.0.0.0","port":6666,"protocol":"tcp"},{"net":"0.0.0.0","port":6667,"protocol":"tcp"},{"net":"0.0.0.0","port":53,"protocol":"udp"},{"net":"0.0.0.0","port":67,"protocol":"udp"},{"net":"0.0.0.0","port":68,"protocol":"udp"},{"net":"0.0.0.0","port":53,"protocol":"udp"}]}}'
+----
+
+[NOTE] 
+.Configuring through rke2-calico HelmChartConfig
+==== 
+I tried to do configuration in the HelmChartConfig but couldn't make it working 
+https://github.com/rancher/rke2-charts/blob/main-source/packages/rke2-calico/generated-changes/patch/values.yaml.patch#L61C2-L61C20
+
+[source,bash]
+----
+kubectl get HelmChartConfig rke2-calico -n kube-system -o json | sed 's\"}}}\"}},'"'felixConfiguration'"':{'"'failsafeInboundHostPorts:'"':[{'"'net'"':'"'0.0.0.0'"','"'port'"':179,'"'protocol'"':'"'tcp'"'},{'"'net'"':'"'0.0.0.0'"','"'port'"':2379,'"'protocol'"':'"'tcp'"'},{'"'net'"':'"'0.0.0.0'"','"'port'"':2380,'"'protocol'"':'"'tcp'"'},{'"'net'"':'"'0.0.0.0'"','"'port'"':5473,'"'protocol'"':'"'tcp'"'},{'"'net'"':'"'0.0.0.0'"','"'port'"':6443,'"'protocol'"':'"'tcp'"'},{'"'net'"':'"'0.0.0.0'"','"'port'"':6666,'"'protocol'"':'"'tcp'"'},{'"'net'"':'"'0.0.0.0'"','"'port'"':6667,'"'protocol'"':'"'tcp'"'},{'"'net'"':'"'0.0.0.0'"','"'port'"':53,'"'protocol'"':'"'udp'"'},{'"'net'"':'"'0.0.0.0'"','"'port'"':67,'"'protocol'"':'"'udp'"'},{'"'net'"':'"'0.0.0.0'"','"'port'"':68,'"'protocol'"':'"'udp'"'},{'"'net'"':'"'0.0.0.0'"','"'port'"':53,'"'protocol'"':'"'udp'"'}]}}\g' \
+| kubectl apply -f -
+----
+====
+
+== Configure hostEndpoints
+I enabled the autocreate hostEndpoints for all the nodes. You could patch the kubecontrollersconfiguration resource to enable the autoCreate.
+
+[source,bash]
+----
+kubectl patch kubecontrollersconfiguration default --type=merge --patch='{"spec": {"controllers": {"node": {"hostEndpoint": {"autoCreate": "Enabled"}}}}}'
+----
+
+
+== Add the needed GlobalNetworkPolicy
+[source,yaml]
+----
+apiVersion: crd.projectcalico.org/v1
+kind: GlobalNetworkPolicy
+metadata:
+  name: allow-ssh-ingress
+spec:
+  order: 10
+  preDNAT: true
+  types:
+  - Ingress
+  - Egress
+  egress:
+  - action: Allow
+  ingress:
+  - action: Allow
+    protocol: TCP
+    destination:
+      ports:
+      - 22
+    source:
+      nets:
+      - 10.0.10.58/20
+  selector: has(node-role.kubernetes.io/worker)
+---
+apiVersion: crd.projectcalico.org/v1
+kind: GlobalNetworkPolicy
+metadata:
+  name: drop-other-ssh-ingress
+spec:
+  order: 20
+  preDNAT: true
+  applyOnForward: true
+  ingress:
+    - action: Deny
+      protocol: TCP
+      destination:
+        ports:
+        - 22
+  selector: has(node-role.kubernetes.io/worker)
+----
