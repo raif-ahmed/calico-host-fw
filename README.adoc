@@ -12,7 +12,7 @@ In this Post i will use RKE2 Calico GlobalNetworkPolicy to secure the host acces
 
 == Configure Calico FelixConfiguration in RKE2
 
-By default the SSH is always enabled as pert of the https://docs.tigera.io/calico/latest/reference/host-endpoints/failsafe[Failsafe rules], so I will Update the https://docs.tigera.io/calico/latest/reference/felix/configuration[FelixConfiguration]
+By default the SSH is always enabled as part of the https://docs.tigera.io/calico/latest/reference/host-endpoints/failsafe[Failsafe rules], so I will Update the https://docs.tigera.io/calico/latest/reference/felix/configuration[FelixConfiguration]
 The list of Port are extracted from the default configuration found at https://docs.tigera.io/calico/latest/reference/host-endpoints/failsafe[Failsafe rules], with only SSH being excluded
 
 [source,bash]
